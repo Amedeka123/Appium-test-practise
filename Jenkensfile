@@ -1,0 +1,73 @@
+pipeline {
+  agent any
+  options {
+    timestamps()
+  }
+  tools {
+    jdk   'JDK17'         // Must match the name you set in Jenkins → Tools
+    maven 'Maven_3.9.11'  // Same here
+    nodejs 'Node18'       // NodeJS for Appium
+  }
+  environment {
+    ANDROID_HOME     = 'C:\\Users\\israe\\AppData\\Local\\Android\\Sdk'   // Adjust to your actual SDK path
+    ANDROID_SDK_ROOT = 'C:\\Users\\israe\\AppData\\Local\\Android\\Sdk'
+    PATH = "${env.PATH};${ANDROID_HOME}\\platform-tools;${ANDROID_HOME}\\emulator;${ANDROID_HOME}\\tools;${ANDROID_HOME}\\tools\\bin"
+    AVD_NAME = 'Pixel 8 Pro'  // Replace with your emulator name (emulator -list-avds)
+    APPIUM_PORT = '4723'
+  }
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Sanity Check') {
+      steps {
+        bat 'adb --version'
+        bat 'adb devices'
+      }
+    }
+
+    stage('Start Emulator') {
+      when { expression { return env.AVD_NAME?.trim() } }
+      steps {
+        bat 'start "" /B emulator -avd %AVD_NAME% -no-snapshot -no-boot-anim'
+        // wait for boot completion
+        bat '''
+          for /l %%x in (1,1,180) do (
+            adb shell getprop sys.boot_completed 2>nul | findstr 1 >nul && goto :ready
+            timeout /t 1 >nul
+          )
+          echo Emulator failed to boot in time & exit /b 1
+          :ready
+        '''
+      }
+    }
+
+    stage('Start Appium') {
+      steps {
+        bat 'start "" /B cmd /c "appium --port %APPIUM_PORT% --log appium.log"'
+        // wait for Appium port
+        bat 'powershell -NoProfile -Command "$deadline=(Get-Date).AddSeconds(60); while((Get-Date) -lt $deadline){ try{ (New-Object Net.Sockets.TcpClient(\'127.0.0.1\',%APPIUM_PORT%)).Close(); exit 0 } catch { Start-Sleep -Seconds 2 } }; exit 1"'
+      }
+    }
+
+    stage('Run Tests') {
+      steps {
+        bat 'mvn clean test'
+      }
+    }
+  }
+  post {
+    always {
+      // Archive test reports
+      junit '**/surefire-reports/*.xml'
+      archiveArtifacts artifacts: 'appium.log', onlyIfSuccessful: false
+
+      // Kill the emulator and Appium after build
+      bat 'adb -s emulator-5554 emu kill 2>nul || ver >nul'
+      bat 'for /f "tokens=5" %%p in (\'netstat -ano ^| findstr :%APPIUM_PORT% ^| findstr LISTENING\') do taskkill /F /PID %%p'
+    }
+  }
+}
