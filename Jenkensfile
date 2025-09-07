@@ -4,8 +4,8 @@ pipeline {
     timestamps()
   }
   tools {
-    jdk   'JDK17'         // Must match the name you set in Jenkins → Tools
-    maven 'Maven_3.9.11'  // Same here
+    jdk   'JDK21'         // Must match the name you set in Jenkins → Tools
+    maven 'Maven_3.9.9'  // Same here
     nodejs 'Node18'       // NodeJS for Appium
   }
   environment {
@@ -45,13 +45,6 @@ pipeline {
       }
     }
 
-    stage('Start Appium') {
-      steps {
-        bat 'start "" /B cmd /c "appium --port %APPIUM_PORT% --log appium.log"'
-        // wait for Appium port
-        bat 'powershell -NoProfile -Command "$deadline=(Get-Date).AddSeconds(60); while((Get-Date) -lt $deadline){ try{ (New-Object Net.Sockets.TcpClient(\'127.0.0.1\',%APPIUM_PORT%)).Close(); exit 0 } catch { Start-Sleep -Seconds 2 } }; exit 1"'
-      }
-    }
 
     stage('Run Tests') {
       steps {
